@@ -167,6 +167,20 @@ function M.toggle_word_diff(value)
   return config.word_diff
 end
 
+--- Toggle [[gitsigns-config-inline_diff]]
+---
+--- @param value boolean|nil Value to set toggle. If `nil`
+---     the toggle value is inverted.
+--- @return boolean : Current value of [[gitsigns-config-inline_diff]]
+function M.toggle_inline_diff(value)
+  if value ~= nil then
+    config.inline_diff = value
+  else
+    config.inline_diff = not config.inline_diff
+  end
+  return config.inline_diff
+end
+
 --- Toggle [[gitsigns-config-current_line_blame]]
 ---
 --- @param value boolean|nil Value to set toggle. If `nil`

@@ -84,6 +84,7 @@
 --- @field attach_to_untracked boolean
 --- @field worktrees {toplevel: string, gitdir: string}[]
 --- @field word_diff boolean
+--- @field inline_diff boolean
 --- @field trouble boolean
 --- @field gh boolean
 --- -- Undocumented
@@ -808,6 +809,29 @@ M.schema = {
         • For word diff in virtual lines (e.g. show_deleted):
           • `GitSignsAddVirtLnInline`
           • `GitSignsChangeVirtLnInline`
+          • `GitSignsDeleteVirtLnInline`
+    ]],
+  },
+
+  inline_diff = {
+    type = 'boolean',
+    default = false,
+    description = [[
+      Show inline diff of all hunks in the buffer.
+
+      When enabled, deleted lines are shown as virtual text and added lines
+      are highlighted with word-level diff regions. This is a persistent
+      mode that applies to all hunks in all attached buffers.
+
+      Uses the highlights:
+        • For added lines:
+          • `GitSignsAddPreview`
+        • For word diff in added lines:
+          • `GitSignsAddInline`
+          • `GitSignsChangeInline`
+          • `GitSignsDeleteInline`
+        • For deleted virtual lines:
+          • `GitSignsDeleteVirtLn`
           • `GitSignsDeleteVirtLnInline`
     ]],
   },

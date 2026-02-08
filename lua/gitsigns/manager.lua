@@ -338,6 +338,113 @@ local function update_show_deleted(bufnr, hunks)
   end
 end
 
+local ns_inline = api.nvim_create_namespace('gitsigns_inline_diff')
+
+--- @param bufnr integer
+local function clear_inline(bufnr)
+  local marks = api.nvim_buf_get_extmarks(bufnr, ns_inline, 0, -1, {})
+  for _, mark in ipairs(marks) do
+    api.nvim_buf_del_extmark(bufnr, ns_inline, mark[1])
+  end
+end
+
+--- @param bufnr integer
+--- @param nsi integer
+--- @param hunk Gitsigns.Hunk.Hunk
+local function show_inline_added(bufnr, nsi, hunk)
+  local start_row = hunk.added.start - 1
+
+  for offset = 0, hunk.added.count - 1 do
+    local row = start_row + offset
+    api.nvim_buf_set_extmark(bufnr, nsi, row, 0, {
+      end_row = row + 1,
+      hl_group = 'GitSignsAddPreview',
+      hl_eol = true,
+      priority = 1000,
+    })
+  end
+
+  local _, added_regions =
+    require('gitsigns.diff_int').run_word_diff(hunk.removed.lines, hunk.added.lines)
+
+  for _, region in ipairs(added_regions) do
+    local offset, rtype, scol, ecol = region[1] - 1, region[2], region[3] - 1, region[4] - 1
+
+    local cr_at_eol_change = rtype == 'change'
+      and vim.endswith(assert(hunk.added.lines[offset + 1]), '\r')
+
+    api.nvim_buf_set_extmark(bufnr, nsi, start_row + offset, scol, {
+      end_col = ecol,
+      strict = not cr_at_eol_change,
+      hl_group = rtype == 'add' and 'GitSignsAddInline'
+        or rtype == 'change' and 'GitSignsChangeInline'
+        or 'GitSignsDeleteInline',
+      priority = 1001,
+    })
+  end
+end
+
+--- @param bufnr integer
+--- @param nsi integer
+--- @param hunk Gitsigns.Hunk.Hunk
+local function show_inline_deleted(bufnr, nsi, hunk)
+  local virt_lines = {} --- @type [string, string][][]
+
+  for i, line in ipairs(hunk.removed.lines) do
+    local vline = {} --- @type [string, string][]
+    local last_ecol = 1
+
+    local regions = require('gitsigns.diff_int').run_word_diff(
+      { hunk.removed.lines[i] },
+      { hunk.added.lines[i] }
+    )
+
+    for _, region in ipairs(regions) do
+      local rline, scol, ecol = region[1], region[3], region[4]
+      if rline > 1 then
+        break
+      end
+      vline[#vline + 1] = { line:sub(last_ecol, scol - 1), 'GitSignsDeleteVirtLn' }
+      vline[#vline + 1] = { line:sub(scol, ecol - 1), 'GitSignsDeleteVirtLnInline' }
+      last_ecol = ecol
+    end
+
+    if #line > 0 then
+      vline[#vline + 1] = { line:sub(last_ecol, -1), 'GitSignsDeleteVirtLn' }
+    end
+
+    -- Add extra padding so the entire line is highlighted
+    local padding = string.rep(' ', VIRT_LINE_LEN - #line)
+    vline[#vline + 1] = { padding, 'GitSignsDeleteVirtLn' }
+
+    virt_lines[i] = vline
+  end
+
+  local topdelete = hunk.added.start == 0 and hunk.type == 'delete'
+
+  local row = topdelete and 0 or hunk.added.start - 1
+  api.nvim_buf_set_extmark(bufnr, nsi, row, -1, {
+    virt_lines = virt_lines,
+    virt_lines_above = hunk.type ~= 'delete' or topdelete,
+  })
+end
+
+--- @param bufnr integer
+--- @param hunks? Gitsigns.Hunk.Hunk[]
+local function update_inline_diff(bufnr, hunks)
+  clear_inline(bufnr)
+  if config.inline_diff then
+    for _, hunk in ipairs(hunks or {}) do
+      if hunk.removed.count > 0 then
+        show_inline_deleted(bufnr, ns_inline, hunk)
+      end
+      if hunk.added.count > 0 then
+        show_inline_added(bufnr, ns_inline, hunk)
+      end
+    end
+  end
+end
+
 --- @param bufnr integer
 --- @return boolean
 local function buf_in_view(bufnr)
@@ -446,6 +553,7 @@ M.update = throttle_async({ hash = 1, schedule = true }, function(bufnr)
       apply_win_signs(bufnr, vim.fn.line('w0'), vim.fn.line('w$'), true)
 
       update_show_deleted(bufnr, bcache.hunks)
+      update_inline_diff(bufnr, bcache.hunks)
       bcache.force_next_update = false
 
       local summary = Hunks.get_summary(bcache.hunks)
@@ -475,6 +583,7 @@ function M.detach(bufnr, keep_signs)
     end
     redraw_statuscol(bufnr)
   end
+  clear_inline(bufnr)
 end
 
 function M.reset_signs()
@@ -513,7 +622,7 @@ function M.setup()
     end,
   })
 
-  Config.subscribe({ 'signcolumn', 'numhl', 'linehl', 'show_deleted' }, function()
+  Config.subscribe({ 'signcolumn', 'numhl', 'linehl', 'show_deleted', 'inline_diff' }, function()
     -- Remove all signs
     M.reset_signs()
 
